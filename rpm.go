@@ -52,12 +52,12 @@ var (
 	// ErrWrongFileOrder is returned when files are not sorted by name.
 	ErrWrongFileOrder = errors.New("wrong file addition order")
 	scriptletsTypes   = map[string]ScriptletType{
-		"pretrans":     {tag: tagPretrans, programTag: tagPretransProg},
+		"pretrans":     {tag: tagPretrans, programTag: tagPretransProg, lua: true},
 		"prein":        {tag: tagPrein, programTag: tagPreinProg},
 		"postin":       {tag: tagPostin, programTag: tagPostinProg},
 		"preun":        {tag: tagPreun, programTag: tagPreunProg},
 		"postun":       {tag: tagPostun, programTag: tagPostunProg},
-		"posttrans":    {tag: tagPosttrans, programTag: tagPosttransProg},
+		"posttrans":    {tag: tagPosttrans, programTag: tagPosttransProg, lua: true},
 		"verifyscript": {tag: tagVerifyScript, programTag: tagVerifyScriptProg},
 	}
 )
@@ -129,6 +129,8 @@ type Scriptlet struct {
 type ScriptletType struct {
 	tag        int
 	programTag int
+	// different <lua> default interpreter (pretrans, posttrans)
+	lua bool
 }
 
 // NewRPM creates and returns a new RPM struct.
@@ -501,7 +503,11 @@ func (r *RPM) writeScriptlets(h *index) {
 				h.Add(tagInfo.tag, EntryString(s.content))
 			}
 			if s.interpreter == "" {
-				h.Add(tagInfo.programTag, EntryString(r.scriptletInterpreter))
+				interpreter := r.scriptletInterpreter
+				if tagInfo.lua {
+					interpreter = "<lua>"
+				}
+				h.Add(tagInfo.programTag, EntryString(interpreter))
 			} else {
 				h.Add(tagInfo.programTag, EntryString(s.interpreter))
 			}
@@ -512,10 +518,13 @@ func (r *RPM) writeScriptlets(h *index) {
 
 // SetScriptletInterpreter sets the scriptlet interpreter (a.k.a. scriptlet program) used to call
 // all scriptlets, defaults to `/bin/sh`. Will reset anything set by `SetScriptletInterpreterFor()`.
-// An emtpy string resets to the default.
+// An emtpy string resets to the default. pretrans and posttrans usually use <lua> and are skipped.
 // The scriptlets of an rpm can be checked via `rpm -qp --scripts RPMFILE`.
 func (r *RPM) SetScriptletInterpreter(interpreter string) {
-	for name, _ := range scriptletsTypes {
+	for name, tagInfo := range scriptletsTypes {
+		if tagInfo.lua {
+			continue
+		}
 		r.SetScriptletInterpreterFor(name, interpreter)
 	}
 }
@@ -551,7 +560,7 @@ func (r *RPM) setScriptlet(name, s string) {
 	r.scriptlets[name] = Scriptlet{content: s, interpreter: interpreter}
 }
 
-// AddPretrans adds a pretrans scriptlet
+// AddPretrans adds a pretrans scriptlet, usually lua code
 func (r *RPM) AddPretrans(s string) {
 	r.setScriptlet("pretrans", s)
 }
@@ -576,7 +585,7 @@ func (r *RPM) AddPostun(s string) {
 	r.setScriptlet("postun", s)
 }
 
-// AddPosttrans adds a posttrans scriptlet
+// AddPosttrans adds a posttrans scriptlet, usually lua code
 func (r *RPM) AddPosttrans(s string) {
 	r.setScriptlet("posttrans", s)
 }
